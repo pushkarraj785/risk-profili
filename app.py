@@ -164,13 +164,15 @@ if st.button("Get My Risk Profile"):
     }
     st.success(f"### Your Risk Profile: {risk_map.get(pred, 'Unknown')}")
 
-    # # 6. Explainability with SHAP
-    # st.subheader("Why this result?")
-    # explainer = shap.TreeExplainer(model)
-    # shap_values = explainer.shap_values(input_df)
-    # shap.initjs()
-    # st.pyplot(shap.force_plot(
-    #     explainer.expected_value, shap_values, input_df, matplotlib=True, show=False
-    # ))
+    import matplotlib.pyplot as plt
+    
+    st.subheader("Why this result? (Feature impact)")
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(input_df)
+    
+    plt.figure(figsize=(8, 4))
+    shap.summary_plot(shap_values, input_df, plot_type="bar", show=False)
+    st.pyplot(plt.gcf())
+    
 
     st.info("*Model and explanations are for demonstration and educational purposes only. For professional advice, consult a SEBI-registered advisor.*")
