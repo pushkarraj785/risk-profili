@@ -1,178 +1,554 @@
 import streamlit as st
 import pandas as pd
-import xgboost as xgb
-import shap
 
-# 1. Feature mapping for user input to model encoding (as in training)
-encoding = {
+# Configure page settings
+st.set_page_config(
+    page_title="Risk Profile Assessment",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Custom CSS for professional styling with better contrast
+st.markdown("""
+<style>
+    .main-header {
+        text-align: center;
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .question-card {
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 10px;
+        border: 2px solid #e5e7eb;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        margin: 1rem 0;
+        color: #111827;
+    }
+    
+    .question-title {
+        color: #1f2937;
+        font-size: 1.4em;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+        line-height: 1.4;
+    }
+    
+    .score-card {
+        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 10px;
+        text-align: center;
+        margin: 1rem 0;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .metric-card {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 2px solid #e5e7eb;
+        text-align: center;
+        margin: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        color: #111827;
+    }
+    
+    .stRadio > label {
+        color: #111827 !important;
+        font-weight: 600 !important;
+        font-size: 1.1em !important;
+    }
+    
+    .stRadio > div > div > div > label {
+        color: #374151 !important;
+        font-weight: 500 !important;
+        padding: 0.75rem;
+        margin: 0.3rem 0;
+        border-radius: 6px;
+        background-color: #f9fafb;
+        border: 1px solid #d1d5db;
+    }
+    
+    .stRadio > div > div > div > label:hover {
+        background-color: #e5e7eb;
+        border-color: #9ca3af;
+    }
+    
+    .stProgress .st-bo {
+        background-color: #1e3a8a;
+    }
+    
+    .assessment-area {
+        background: #f8fafc;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #3b82f6;
+        margin: 0.5rem 0;
+        color: #1f2937;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Rule-based scoring system (simplified without exposing weights)
+risk_scoring_rules = {
     "Age": {
-        "18–35 years": 0,
-        "36–55 years": 1,
-        "55 years and above": 2
+        "weight": 1.0,
+        "scores": {
+            "18–35 years": 1.0,
+            "36–55 years": 0.5,
+            "55 years and above": 0.2
+        }
     },
     "Dependents": {
-        "No one": 0,
-        "Only spouse": 1,
-        "Spouse and children": 2,
-        "Only parents": 3,
-        "Spouse, children, and parents": 4
+        "weight": 0.83,
+        "scores": {
+            "No one": 1.0,
+            "Only spouse": 0.8,
+            "Spouse and children": 0.6,
+            "Only parents": 0.6,
+            "Spouse, children, and parents": 0.1
+        }
     },
     "Annual Income": {
-        "Below INR 1 lakh": 0,
-        "Between INR 1 lakh and INR 5 lakh": 1,
-        "Between INR 5 lakh and INR 10 lakh": 2,
-        "Between INR 10 lakh and INR 25 lakh": 3,
-        "Above INR 25 lakh": 4
+        "weight": 0.83,
+        "scores": {
+            "Below INR 1 lakh": 0.2,
+            "Between INR 1 lakh and INR 5 lakh": 0.4,
+            "Between INR 5 lakh and INR 10 lakh": 0.6,
+            "Between INR 10 lakh and INR 25 lakh": 0.8,
+            "Above INR 25 lakh": 1.0
+        }
     },
     "EMI % Income": {
-        "None": 0,
-        "Up to 20%": 1,
-        "20–30%": 2,
-        "30–40%": 3,
-        "50% or above": 4
+        "weight": 0.65,
+        "scores": {
+            "None": 1.0,
+            "Up to 20%": 0.8,
+            "20–30%": 0.6,
+            "30–40%": 0.4,
+            "50% or above": 0.2
+        }
     },
     "Income Stability": {
-        "Very low stability": 0,
-        "Low stability": 1,
-        "Moderate stability": 2,
-        "High stability": 3,
-        "Very high stability": 4
+        "weight": 0.65,
+        "scores": {
+            "Very low stability": 0.1,
+            "Low stability": 0.3,
+            "Moderate stability": 0.6,
+            "High stability": 1.0,
+            "Very high stability": 1.0
+        }
     },
     "Portfolio": {
-        "Savings and fixed deposits": 0,
-        "Bonds or debt": 1,
-        "Mutual funds": 2,
-        "Real estate or gold": 3,
-        "Stock market": 4
+        "weight": 0.5,
+        "scores": {
+            "Savings and fixed deposits": 0.4,
+            "Bonds or debt": 0.6,
+            "Mutual funds": 0.5,
+            "Real estate or gold": 0.4,
+            "Stock market": 0.8
+        }
     },
     "Investment Objective": {
-        "Retirement planning": 0,
-        "Monthly income": 1,
-        "Tax saving": 2,
-        "Capital preservation": 3,
-        "Wealth creation": 4
+        "weight": 0.8,
+        "scores": {
+            "Retirement planning": 0.65,
+            "Monthly income": 0.6,
+            "Tax saving": 0.4,
+            "Capital preservation": 0.5,
+            "Wealth creation": 1.0
+        }
     },
     "Investment Duration": {
-        "Less than 1 year": 0,
-        "1–3 years": 1,
-        "3–5 years": 2,
-        "5–10 years": 3,
-        "More than 10 years": 4
+        "weight": 0.8,
+        "scores": {
+            "Less than 1 year": 0.5,
+            "1–3 years": 0.8,
+            "3–5 years": 0.65,
+            "5–10 years": 0.6,
+            "More than 10 years": 0.7
+        }
     },
     "Comfort with High Risk": {
-        "Strongly agree": 0,
-        "Agree": 1,
-        "Neutral": 2,
-        "Disagree": 3,
-        "Strongly disagree": 4
+        "weight": 0.7,
+        "scores": {
+            "Strongly agree": 1.0,
+            "Agree": 0.9,
+            "Neutral": 0.5,
+            "Disagree": 0.2,
+            "Strongly disagree": 0.1
+        }
     },
     "Behavior on 20% Loss": {
-        "Sell and preserve cash": 0,
-        "Sell and move cash to fixed deposits or liquid fund": 1,
-        "Wait till market recovers and then sell": 2,
-        "Keep investments as they are": 3,
-        "Invest more": 4
+        "weight": 0.65,
+        "scores": {
+            "Sell and preserve cash": 0.2,
+            "Sell and move cash to fixed deposits or liquid fund": 0.3,
+            "Wait till market recovers and then sell": 0.5,
+            "Keep investments as they are": 0.8,
+            "Invest more": 1.0
+        }
     }
 }
 
-feature_names = [
-    "Age", "Dependents", "Annual Income", "EMI % Income", "Income Stability",
-    "Portfolio", "Investment Objective", "Investment Duration",
-    "Comfort with High Risk", "Behavior on 20% Loss"
+# Question templates (simplified without emojis in main content)
+questions = [
+    {
+        "key": "Age",
+        "title": "What is your age group?",
+        "options": ["18–35 years", "36–55 years", "55 years and above"]
+    },
+    {
+        "key": "Dependents",
+        "title": "How many people depend on you financially?",
+        "options": ["No one", "Only spouse", "Spouse and children", "Only parents", "Spouse, children, and parents"]
+    },
+    {
+        "key": "Annual Income",
+        "title": "What is your annual income range?",
+        "options": ["Below INR 1 lakh", "Between INR 1 lakh and INR 5 lakh", "Between INR 5 lakh and INR 10 lakh",
+                   "Between INR 10 lakh and INR 25 lakh", "Above INR 25 lakh"]
+    },
+    {
+        "key": "EMI % Income",
+        "title": "What percentage of your monthly income goes towards EMIs or loans?",
+        "options": ["None", "Up to 20%", "20–30%", "30–40%", "50% or above"]
+    },
+    {
+        "key": "Income Stability",
+        "title": "How stable is your income?",
+        "options": ["Very low stability", "Low stability", "Moderate stability", "High stability", "Very high stability"]
+    },
+    {
+        "key": "Portfolio",
+        "title": "Where is most of your current investment portfolio parked?",
+        "options": ["Savings and fixed deposits", "Bonds or debt", "Mutual funds", "Real estate or gold", "Stock market"]
+    },
+    {
+        "key": "Investment Objective",
+        "title": "What is your primary investment objective?",
+        "options": ["Retirement planning", "Monthly income", "Tax saving", "Capital preservation", "Wealth creation"]
+    },
+    {
+        "key": "Investment Duration",
+        "title": "For how long do you plan to stay invested?",
+        "options": ["Less than 1 year", "1–3 years", "3–5 years", "5–10 years", "More than 10 years"]
+    },
+    {
+        "key": "Comfort with High Risk",
+        "title": "To achieve high returns, how comfortable are you with high-risk investments?",
+        "options": ["Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"]
+    },
+    {
+        "key": "Behavior on 20% Loss",
+        "title": "If you lose 20% of your invested value one month after investment, what will you do?",
+        "options": ["Sell and preserve cash", "Sell and move cash to fixed deposits or liquid fund",
+                   "Wait till market recovers and then sell", "Keep investments as they are", "Invest more"]
+    }
 ]
 
-# 2. Load trained model
-@st.cache_resource
-def load_model():
-    model = xgb.XGBClassifier()
-    model.load_model('model/risk_model.json')
-    return model
+# Calculate total possible maximum score for normalization
+max_possible_score = sum(rule["weight"] for rule in risk_scoring_rules.values())
 
-model = load_model()
-
-st.title("🧠 Risk Profiling Robo-Advisor (Research Paper-based)")
-st.write("Answer all the questions below to know your risk profile and understand the key reasons for your score:")
-
-# 3. User-friendly question blocks
-q1 = st.selectbox(
-    "1. What is your age group?",
-    ["18–35 years", "36–55 years", "55 years and above"]
-)
-q2 = st.selectbox(
-    "2. How many people depend on you financially?",
-    ["No one", "Only spouse", "Spouse and children", "Only parents", "Spouse, children, and parents"]
-)
-q3 = st.selectbox(
-    "3. What is your annual income range?",
-    ["Below INR 1 lakh", "Between INR 1 lakh and INR 5 lakh", "Between INR 5 lakh and INR 10 lakh",
-     "Between INR 10 lakh and INR 25 lakh", "Above INR 25 lakh"]
-)
-q4 = st.selectbox(
-    "4. What percentage of your monthly income goes towards EMIs or loans?",
-    ["None", "Up to 20%", "20–30%", "30–40%", "50% or above"]
-)
-q5 = st.selectbox(
-    "5. How stable is your income?",
-    ["Very low stability", "Low stability", "Moderate stability", "High stability", "Very high stability"]
-)
-q6 = st.selectbox(
-    "6. Where is most of your current investment portfolio parked?",
-    ["Savings and fixed deposits", "Bonds or debt", "Mutual funds", "Real estate or gold", "Stock market"]
-)
-q7 = st.selectbox(
-    "7. What is your primary investment objective?",
-    ["Retirement planning", "Monthly income", "Tax saving", "Capital preservation", "Wealth creation"]
-)
-q8 = st.selectbox(
-    "8. For how long do you plan to stay invested?",
-    ["Less than 1 year", "1–3 years", "3–5 years", "5–10 years", "More than 10 years"]
-)
-q9 = st.selectbox(
-    "9. To achieve high returns, how comfortable are you with high-risk investments?",
-    ["Strongly agree", "Agree", "Neutral", "Disagree", "Strongly disagree"]
-)
-q10 = st.selectbox(
-    "10. If you lose 20% of your invested value one month after investment, what will you do?",
-    ["Sell and preserve cash", "Sell and move cash to fixed deposits or liquid fund",
-     "Wait till market recovers and then sell", "Keep investments as they are", "Invest more"]
-)
-
-if st.button("Get My Risk Profile"):
-    # 4. Encode user answers
-    input_dict = {
-        "Age": encoding["Age"][q1],
-        "Dependents": encoding["Dependents"][q2],
-        "Annual Income": encoding["Annual Income"][q3],
-        "EMI % Income": encoding["EMI % Income"][q4],
-        "Income Stability": encoding["Income Stability"][q5],
-        "Portfolio": encoding["Portfolio"][q6],
-        "Investment Objective": encoding["Investment Objective"][q7],
-        "Investment Duration": encoding["Investment Duration"][q8],
-        "Comfort with High Risk": encoding["Comfort with High Risk"][q9],
-        "Behavior on 20% Loss": encoding["Behavior on 20% Loss"][q10]
-    }
-    input_df = pd.DataFrame([input_dict])
-
-    # 5. Predict
-    pred = model.predict(input_df)[0]
-    risk_map = {
-        0: "No Risk",
-        1: "Low Risk",
-        2: "Moderate Risk",
-        3: "Likes Risk",
-        4: "High Risk"
-    }
-    st.success(f"### Your Risk Profile: {risk_map.get(pred, 'Unknown')}")
-
-    import matplotlib.pyplot as plt
+def calculate_risk_score(answers):
+    """Calculate weighted risk score based on user answers"""
+    total_score = 0
+    detailed_scores = {}
     
-    st.subheader("Why this result? (Feature impact)")
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(input_df)
+    for question, answer in answers.items():
+        if question in risk_scoring_rules:
+            rule = risk_scoring_rules[question]
+            weight = rule["weight"]
+            answer_score = rule["scores"].get(answer, 0)
+            weighted_score = weight * answer_score
+            total_score += weighted_score
+            
+            detailed_scores[question] = {
+                "answer": answer,
+                "base_score": answer_score,
+                "weighted_score": weighted_score
+            }
     
-    plt.figure(figsize=(8, 4))
-    shap.summary_plot(shap_values, input_df, plot_type="bar", show=False)
-    st.pyplot(plt.gcf())
+    # Normalize to 1-100 scale
+    normalized_score = (total_score / max_possible_score) * 100
     
+    return normalized_score, detailed_scores
 
-    st.info("*Model and explanations are for demonstration and educational purposes only. For professional advice, consult a SEBI-registered advisor.*")
+def get_risk_category(score):
+    """Categorize risk based on normalized score"""
+    if score < 30:
+        return "Conservative", "Low risk tolerance, prefers capital preservation", "#10b981"
+    elif score < 45:
+        return "Moderate Conservative", "Below average risk tolerance, prefers stable returns", "#f59e0b"
+    elif score < 60:
+        return "Balanced", "Moderate risk tolerance, balanced approach", "#3b82f6"
+    elif score < 75:
+        return "Moderate Aggressive", "Above average risk tolerance, growth-oriented", "#f97316"
+    else:
+        return "Aggressive", "High risk tolerance, seeks maximum growth potential", "#ef4444"
+
+def initialize_session_state():
+    """Initialize session state variables"""
+    if 'stage' not in st.session_state:
+        st.session_state.stage = 'welcome'
+    if 'current_question' not in st.session_state:
+        st.session_state.current_question = 0
+    if 'answers' not in st.session_state:
+        st.session_state.answers = {}
+
+def show_welcome_page():
+    """Display welcome page with introduction"""
+    st.markdown("""
+    <div class="main-header">
+        <h1>Risk Profile Assessment</h1>
+        <h3>Professional Investment Risk Evaluation</h3>
+        <p>Complete a comprehensive questionnaire to understand your risk tolerance and investment profile</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("### Assessment Process")
+        
+        st.markdown("""
+        **Step 1:** Review the assessment methodology  
+        **Step 2:** Answer 10 comprehensive questions  
+        **Step 3:** Receive your risk score and category  
+        **Step 4:** Understand your investment profile
+        """)
+        
+        st.markdown("### About This Assessment")
+        st.info("This assessment uses a research-based methodology to evaluate your risk tolerance across multiple dimensions including demographics, financial status, and behavioral preferences.")
+        
+        if st.button("Start Assessment", type="primary", use_container_width=True):
+            st.session_state.stage = 'methodology'
+            st.rerun()
+
+def show_methodology_page():
+    """Display assessment methodology without exposing weights"""
+    st.markdown("""
+    <div class="main-header">
+        <h2>Assessment Methodology</h2>
+        <p>Understanding how your risk profile is evaluated</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### How We Calculate Your Score")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Scoring System:**
+        - Each question evaluates different aspects of risk tolerance
+        - Your answers receive scores based on risk implications
+        - Final score is normalized to a 1-100 scale
+        - Higher scores indicate higher risk tolerance
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Question Categories:**
+        - Demographics and Life Stage
+        - Financial Status and Stability
+        - Investment Experience and Preferences
+        - Risk Behavior and Psychology
+        """)
+    
+    st.markdown("### Assessment Areas")
+    
+    # Display assessment areas without weights or detailed scoring
+    assessment_areas = [
+        ("Age and Life Stage", "Evaluates your investment time horizon and life stage considerations"),
+        ("Financial Dependents", "Assesses your financial responsibilities and obligations"),
+        ("Income Level", "Determines your financial capacity for risk-taking"),
+        ("Debt Obligations", "Evaluates your current financial commitments"),
+        ("Income Stability", "Assesses the predictability of your income"),
+        ("Current Portfolio", "Reviews your existing investment experience"),
+        ("Investment Goals", "Understands your primary investment objectives"),
+        ("Time Horizon", "Evaluates your investment duration preferences"),
+        ("Risk Comfort", "Assesses your psychological comfort with risk"),
+        ("Loss Behavior", "Evaluates how you react to investment losses")
+    ]
+    
+    for area, description in assessment_areas:
+        st.markdown(f"""
+        <div class="assessment-area">
+            <h4>{area}</h4>
+            <p>{description}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Begin Questions", type="primary", use_container_width=True):
+            st.session_state.stage = 'questions'
+            st.session_state.current_question = 0
+            st.rerun()
+
+def show_question_page():
+    """Display individual questions professionally"""
+    current_q = st.session_state.current_question
+    total_questions = len(questions)
+    
+    # Progress tracking
+    progress = (current_q + 1) / total_questions
+    
+    st.markdown(f"""
+    <div class="main-header">
+        <h2>Question {current_q + 1} of {total_questions}</h2>
+        <p>Risk Profile Assessment</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Progress bar
+    st.markdown("### Progress")
+    st.progress(progress)
+    st.markdown(f"**{int(progress * 100)}% Complete** • {total_questions - current_q - 1} questions remaining")
+    
+    # Current question
+    question = questions[current_q]
+    
+    st.markdown(f"""
+    <div class="question-card">
+        <div class="question-title">{question['title']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Answer options (without scores)
+    selected_answer = st.radio(
+        "Select your answer:",
+        question["options"],
+        key=f"q_{current_q}",
+        label_visibility="collapsed"
+    )
+    
+    # Navigation
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col1:
+        if current_q > 0:
+            if st.button("← Previous", use_container_width=True):
+                st.session_state.current_question -= 1
+                st.rerun()
+    
+    with col3:
+        if selected_answer:
+            if current_q < total_questions - 1:
+                if st.button("Next →", type="primary", use_container_width=True):
+                    st.session_state.answers[question["key"]] = selected_answer
+                    st.session_state.current_question += 1
+                    st.rerun()
+            else:
+                if st.button("Complete Assessment", type="primary", use_container_width=True):
+                    st.session_state.answers[question["key"]] = selected_answer
+                    st.session_state.stage = 'results'
+                    st.rerun()
+
+def show_results_page():
+    """Display results with professional analysis"""
+    # Calculate score
+    risk_score, detailed_scores = calculate_risk_score(st.session_state.answers)
+    risk_category, risk_description, color = get_risk_category(risk_score)
+    
+    # Main score display
+    st.markdown(f"""
+    <div class="score-card">
+        <h1>{risk_category}</h1>
+        <h2>Risk Score: {risk_score:.1f}/100</h2>
+        <p style="font-size: 1.2em;">{risk_description}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Score interpretation
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>Score</h3>
+            <h2 style="color: {color};">{risk_score:.1f}/100</h2>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>Category</h3>
+            <h3 style="color: {color};">{risk_category}</h3>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        approach = "Conservative Approach" if risk_score < 50 else "Growth-Oriented Approach"
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3>Approach</h3>
+            <h4 style="color: {color};">{approach}</h4>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Risk scale visualization
+    st.markdown("### Your Position on Risk Scale")
+    progress_value = risk_score / 100
+    st.progress(progress_value)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**0 - Conservative**")
+    with col2:
+        st.markdown("**50 - Balanced**")
+    with col3:
+        st.markdown("**100 - Aggressive**")
+    
+    # Simplified breakdown (without exposing weights)
+    st.markdown("### Assessment Summary")
+    
+    breakdown_data = []
+    for question, details in detailed_scores.items():
+        breakdown_data.append({
+            "Question Area": question,
+            "Your Answer": details["answer"],
+            "Risk Score": f"{details['base_score']:.2f}"
+        })
+    
+    breakdown_df = pd.DataFrame(breakdown_data)
+    st.dataframe(breakdown_df, use_container_width=True)
+    
+    # Action buttons
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Take Assessment Again", use_container_width=True):
+            # Reset session state
+            st.session_state.stage = 'welcome'
+            st.session_state.current_question = 0
+            st.session_state.answers = {}
+            st.rerun()
+    
+    st.info("*This assessment is for educational purposes only. Please consult a qualified financial advisor for personalized investment advice.*")
+
+# Main application flow
+def main():
+    initialize_session_state()
+    
+    # Display appropriate page based on stage
+    if st.session_state.stage == 'welcome':
+        show_welcome_page()
+    elif st.session_state.stage == 'methodology':
+        show_methodology_page()
+    elif st.session_state.stage == 'questions':
+        show_question_page()
+    elif st.session_state.stage == 'results':
+        show_results_page()
+
+if __name__ == "__main__":
+    main()
