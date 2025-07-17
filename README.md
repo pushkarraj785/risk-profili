@@ -379,6 +379,3 @@ The **50-point threshold** represents the mathematical midpoint of the risk scal
 
 This project is for educational and prototype purposes.
 
-## Support
-
-For questions or issues, please refer to the project documentation or contact the development team.
