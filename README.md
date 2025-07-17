@@ -4,6 +4,11 @@
 
 A professional **rule-based risk profiling assessment tool** built with Streamlit. This application calculates a normalized risk tolerance score (1-100) through a comprehensive questionnaire designed for financial advisory and investment planning purposes.
 
+## Demo Video
+
+[Screencast from 2025-07-18 00-21-17.webm](https://github.com/user-attachments/assets/48a16673-7124-4fa7-92fe-e3efbfbfd9bf)
+
+
 ## How to Run
 
 ### Prerequisites
