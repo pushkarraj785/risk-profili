@@ -369,37 +369,6 @@ The **50-point threshold** represents the mathematical midpoint of the risk scal
   - Willing to accept volatility for returns
   - Focus on capital appreciation
 
-### Examples by Score
-
-| Score | Category | Approach | Investment Strategy |
-|-------|----------|----------|-------------------|
-| 25 | Conservative | Conservative Approach | 80% Debt, 20% Equity |
-| 40 | Moderate Conservative | Conservative Approach | 70% Debt, 30% Equity |
-| 49 | Balanced | Conservative Approach | 60% Debt, 40% Equity |
-| 50 | Balanced | Growth-Oriented Approach | 40% Debt, 60% Equity |
-| 65 | Moderate Aggressive | Growth-Oriented Approach | 30% Debt, 70% Equity |
-| 85 | Aggressive | Growth-Oriented Approach | 20% Debt, 80% Equity |
-
-This binary approach simplifies complex investment decision-making into two clear strategic directions that financial advisors commonly use in practice.
-
-## Use Cases
-
-- Financial advisory consultations
-- Investment planning sessions  
-- Academic research projects
-- Corporate financial planning
-- Personal risk assessment
-- Prototype demonstration
-
-## Contributing
-
-This is a prototype application. For contributions or modifications:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
 
 ## License
 
